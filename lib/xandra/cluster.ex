@@ -23,13 +23,13 @@ defmodule Xandra.Cluster do
   internal purposes).
 
   Here is an example of how one could use `Xandra.Cluster` to connect to
-  multiple nodes, while using `:poolboy` for pooling the connections to each
+  multiple nodes, while using `DBConnection.ConnectionPool` for pooling the connections to each
   node:
 
       Xandra.start_link([
         nodes: ["cassandra1.example.net", "cassandra2.example.net"],
         pool: Xandra.Cluster,
-        underlying_pool: DBConnection.Poolboy,
+        underlying_pool: DBConnection.ConnectionPool,
         pool_size: 10,
       ])
 
@@ -79,8 +79,6 @@ defmodule Xandra.Cluster do
 
   use GenServer
 
-  @behaviour DBConnection.Pool
-
   @default_pool_module DBConnection.Connection
   @default_load_balancing :random
 
@@ -107,6 +105,9 @@ defmodule Xandra.Cluster do
     Supervisor.Spec.worker(__MODULE__, [module, options], child_options)
   end
 
+  def start_link({connection, options}) do
+    start_link(connection, options)
+  end
   def start_link(Xandra.Connection, options) do
     {pool_module, options} = Keyword.pop(options, :underlying_pool, @default_pool_module)
     {load_balancing, options} = Keyword.pop(options, :load_balancing, @default_load_balancing)
@@ -205,7 +206,8 @@ defmodule Xandra.Cluster do
     } = state
 
     options = [address: address, port: port] ++ options
-    child_spec = pool_module.child_spec(Xandra.Connection, options, id: address)
+
+    child_spec = pool_module.child_spec(Xandra.Connection, options, pool_supervisor, node_ref, id: address)
 
     case Supervisor.start_child(pool_supervisor, child_spec) do
       {:ok, pool} ->
